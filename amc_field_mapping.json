@@ -1,0 +1,24 @@
+{
+  "Mirae": {
+    "Folio_No": "Text7",
+    "First_Sole_Applicant_Name_as_per_PAN": "Text13",
+    "PAN": "Text14",
+    "Email": "Text15",
+    "DOB": "Text19",
+    "Mobile": "Text28",
+    "Address_Line1": "Text23",
+    "Address_Line2": "Text24",
+    "City": "Text25",
+    "Pincode": "Text26",
+    "Bank_Name": "Text29",
+    "Bank_Branch": "Text30",
+    "Bank_Account_Number": "Text32",
+    "MICR_Code": "Text34",
+    "IFSC_Code": "Text35",
+    "Nominee_Name": "Text45",
+    "Nominee_Relation": "Text46",
+    "Income_Slab_5to10_Lakhs": "Check Box39",
+    "Gender_Female": "Check Box18",
+    "Account_Type_Savings": "Check Box20"
+  }
+}
