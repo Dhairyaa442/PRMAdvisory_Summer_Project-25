@@ -1,83 +1,97 @@
-import java.io.*;
-import java.util.Map;
-import java.util.HashMap;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
-import org.apache.pdfbox.pdmodel.interactive.form.PDField;
-import org.apache.pdfbox.pdmodel.interactive.form.PDCheckBox;
-import org.apache.pdfbox.pdmodel.interactive.form.PDTextField;
+import org.apache.pdfbox.pdmodel.interactive.form.*;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
+import java.io.File;
+import java.io.FileReader;
+import java.util.List;
+import java.util.Map;
+
 public class PDFGeneratorHelper {
 
-    public static void fillMiraeForm(Map<String, String> inputData) {
+    public static void fillForms(List<String> selectedAMCs, Map<String, String> inputData) {
         try {
-            // Load Mirae PDF template
-            PDDocument document = PDDocument.load(new File("templates/Mirae.pdf"));
-            PDAcroForm form = document.getDocumentCatalog().getAcroForm();
+            JSONObject fullMapping = (JSONObject) new JSONParser().parse(new FileReader("amc_field_mapping.json"));
 
-            if (form == null) {
-                System.out.println("No AcroForm found in template.");
-                document.close();
-                return;
-            }
-
-            // Load field mappings for Mirae from JSON
-            JSONObject mapping = loadMapping("Mirae");
-
-            for (Object key : mapping.keySet()) {
-                String label = (String) key;
-                String fieldName = (String) mapping.get(label);
-                String value = inputData.get(label);
-
-                if (value == null || fieldName == null) continue;
-
-                PDField field = form.getField(fieldName);
-                if (field == null) {
-                    System.out.println("Field not found: " + fieldName);
+            for (String amc : selectedAMCs) {
+                JSONObject fieldMap = (JSONObject) fullMapping.get(amc);
+                if (fieldMap == null) {
+                    System.out.println("❌ Mapping not found for AMC: " + amc);
                     continue;
                 }
 
-                if (field instanceof PDCheckBox) {
-                    PDCheckBox checkBox = (PDCheckBox) field;
-                    if (value.equalsIgnoreCase("Yes") || value.equalsIgnoreCase("On") || value.equalsIgnoreCase("true")) {
-                        checkBox.check();
-                    } else {
-                        checkBox.unCheck();
-                    }
-                } else {
-                    field.setValue(value);
+                File template = new File("templates/" + amc + ".pdf");
+                if (!template.exists()) {
+                    System.out.println("❌ Template not found: " + template.getAbsolutePath());
+                    continue;
                 }
+
+                PDDocument document = PDDocument.load(template);
+                PDAcroForm acroForm = document.getDocumentCatalog().getAcroForm();
+                if (acroForm == null) {
+                    System.out.println("❌ No AcroForm in " + template.getName());
+                    document.close();
+                    continue;
+                }
+
+                for (Object keyObj : fieldMap.keySet()) {
+                    String logicalKey = (String) keyObj;
+                    String value = inputData.get(logicalKey);
+                    if (value == null || value.trim().isEmpty()) continue;
+
+                    String fieldSpec = (String) fieldMap.get(logicalKey);
+
+                    // Handle multiple fields (e.g., "text18 and text18#1")
+                    for (String rawFieldName : fieldSpec.split("and")) {
+                        String fieldName = rawFieldName.trim();
+
+                        if (fieldName.toLowerCase().startsWith("check box")) {
+                            String[] parts = fieldName.split("#");
+                            if (parts.length >= 2) {
+                                String baseName = parts[0].trim();
+                                String[] indices = parts[1].split(",");
+                                for (String idx : indices) {
+                                    String fullCheckBox = baseName + "#" + idx.trim();
+                                    PDField field = acroForm.getField(fullCheckBox);
+                                    if (field instanceof PDCheckBox) {
+                                        if ("yes".equalsIgnoreCase(value) || value.equals(idx.trim())) {
+                                            ((PDCheckBox) field).check();
+                                        } else {
+                                            ((PDCheckBox) field).unCheck();
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            PDField field = acroForm.getField(fieldName);
+                            if (field != null) {
+                                try {
+                                    field.setValue(value);
+                                } catch (Exception fe) {
+                                    System.out.println("⚠️ Error setting field: " + fieldName + " - " + fe.getMessage());
+                                }
+                            } else {
+                                System.out.println("🚫 Field not found: " + fieldName);
+                            }
+                        }
+                    }
+                }
+
+                String clientName = inputData.getOrDefault("applicant name", "Client").replaceAll("[^a-zA-Z0-9]", "_");
+                File outDir = new File("filled_forms/" + clientName);
+                outDir.mkdirs();
+                File outFile = new File(outDir, amc + "_Filled.pdf");
+                document.save(outFile);
+                document.close();
+
+                System.out.println("✅ Saved: " + outFile.getAbsolutePath());
             }
 
-            // Make sure the filled fields remain editable
-            //form.flattenFields(false);
-
-            // Save to client's folder
-            String clientName = inputData.getOrDefault("First_Sole_Applicant_Name_as_per_PAN", "UnknownClient").replaceAll("\\s+", "_");
-            String outputDir = "filled_forms/" + clientName;
-            Files.createDirectories(Paths.get(outputDir));
-            String outputPath = outputDir + "/Mirae_Filled.pdf";
-
-            document.save(outputPath);
-            document.close();
-
-            System.out.println("✅ Mirae form filled and saved to: " + outputPath);
         } catch (Exception e) {
+            System.out.println("❌ Error while filling: " + e.getMessage());
             e.printStackTrace();
         }
     }
-
-    private static JSONObject loadMapping(String amcName) throws Exception {
-        FileReader reader = new FileReader("amc_field_mapping.json");
-        JSONParser parser = new JSONParser();
-        JSONObject root = (JSONObject) parser.parse(reader);
-        reader.close();
-
-        return (JSONObject) root.get(amcName);
-    }
 }
+
