@@ -1,5 +1,7 @@
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.interactive.form.*;
+import org.apache.pdfbox.cos.COSName;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
@@ -29,10 +31,16 @@ public class PDFGeneratorHelper {
 
                 PDDocument document = PDDocument.load(template);
                 PDAcroForm acroForm = document.getDocumentCatalog().getAcroForm();
+
                 if (acroForm == null) {
                     System.out.println("❌ No AcroForm in " + template.getName());
                     document.close();
                     continue;
+                }
+
+                // ✅ Fix blank field font issues
+                if (acroForm.getDefaultResources() != null) {
+                    acroForm.getDefaultResources().put(COSName.getPDFName("Helv"), PDType1Font.HELVETICA);
                 }
 
                 for (Object keyObj : fieldMap.keySet()) {
@@ -42,28 +50,41 @@ public class PDFGeneratorHelper {
 
                     String fieldSpec = (String) fieldMap.get(logicalKey);
 
-                    // Handle multiple fields (e.g., "text18 and text18#1")
                     for (String rawFieldName : fieldSpec.split("and")) {
                         String fieldName = rawFieldName.trim();
 
+                        // ✅ Handle checkboxes with # suffix
                         if (fieldName.toLowerCase().startsWith("check box")) {
-                            String[] parts = fieldName.split("#");
-                            if (parts.length >= 2) {
-                                String baseName = parts[0].trim();
-                                String[] indices = parts[1].split(",");
-                                for (String idx : indices) {
-                                    String fullCheckBox = baseName + "#" + idx.trim();
-                                    PDField field = acroForm.getField(fullCheckBox);
-                                    if (field instanceof PDCheckBox) {
-                                        if ("yes".equalsIgnoreCase(value) || value.equals(idx.trim())) {
-                                            ((PDCheckBox) field).check();
-                                        } else {
-                                            ((PDCheckBox) field).unCheck();
+                            if (fieldName.contains("#")) {
+                                String[] parts = fieldName.split("#");
+                                if (parts.length >= 2) {
+                                    String baseName = parts[0].trim();
+                                    String[] indices = parts[1].split(",");
+                                    for (String idx : indices) {
+                                        String fullCheckBox = baseName + "#" + idx.trim();
+                                        PDField field = acroForm.getField(fullCheckBox);
+                                        if (field instanceof PDCheckBox) {
+                                            if ("yes".equalsIgnoreCase(value) || value.equals(idx.trim())) {
+                                                ((PDCheckBox) field).check();
+                                            } else {
+                                                ((PDCheckBox) field).unCheck();
+                                            }
                                         }
+                                    }
+                                }
+                            } else {
+                                // ✅ Support simple checkbox (like checkbox1)
+                                PDField field = acroForm.getField(fieldName);
+                                if (field instanceof PDCheckBox) {
+                                    if ("yes".equalsIgnoreCase(value) || "on".equalsIgnoreCase(value)) {
+                                        ((PDCheckBox) field).check();
+                                    } else {
+                                        ((PDCheckBox) field).unCheck();
                                     }
                                 }
                             }
                         } else {
+                            // ✅ Normal text field
                             PDField field = acroForm.getField(fieldName);
                             if (field != null) {
                                 try {
@@ -78,9 +99,10 @@ public class PDFGeneratorHelper {
                     }
                 }
 
-                String clientName = inputData.getOrDefault("applicant name", "Client").replaceAll("[^a-zA-Z0-9]", "_");
+                String clientName = inputData.getOrDefault("Applicant name", "Client").replaceAll("[^a-zA-Z0-9]", "_");
                 File outDir = new File("filled_forms/" + clientName);
                 outDir.mkdirs();
+
                 File outFile = new File(outDir, amc + "_Filled.pdf");
                 document.save(outFile);
                 document.close();
@@ -94,4 +116,3 @@ public class PDFGeneratorHelper {
         }
     }
 }
-
