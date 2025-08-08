@@ -1,6 +1,9 @@
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDResources;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
-import org.apache.pdfbox.pdmodel.interactive.form.*;
+import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
+import org.apache.pdfbox.pdmodel.interactive.form.PDField;
 import org.apache.pdfbox.cos.COSName;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
@@ -9,109 +12,81 @@ import java.io.File;
 import java.io.FileReader;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class PDFGeneratorHelper {
 
-    public static void fillForms(List<String> selectedAMCs, Map<String, String> inputData) {
+    private static final String TEMPLATE_DIR = "templates/";
+    private static final String OUTPUT_DIR = "filled_forms/";
+    private static final String MAPPING_FILE = "amc_field_mapping.json";
+
+    public static void fillForms(List<String> selectedAMCs, Map<String, String> formData) {
         try {
-            JSONObject fullMapping = (JSONObject) new JSONParser().parse(new FileReader("amc_field_mapping.json"));
+            JSONObject fullMapping = (JSONObject) new JSONParser().parse(new FileReader(MAPPING_FILE));
+            String clientName = formData.getOrDefault("Applicant name", "Client");
+            File clientFolder = new File(OUTPUT_DIR + clientName.replaceAll("\\s+", "_"));
+            if (!clientFolder.exists()) clientFolder.mkdirs();
 
             for (String amc : selectedAMCs) {
-                JSONObject fieldMap = (JSONObject) fullMapping.get(amc);
-                if (fieldMap == null) {
-                    System.out.println("❌ Mapping not found for AMC: " + amc);
+                JSONObject amcMapping = (JSONObject) fullMapping.get(amc);
+                if (amcMapping == null) {
+                    System.err.println("No mapping found for " + amc);
                     continue;
                 }
 
-                File template = new File("templates/" + amc + ".pdf");
-                if (!template.exists()) {
-                    System.out.println("❌ Template not found: " + template.getAbsolutePath());
-                    continue;
-                }
-
-                PDDocument document = PDDocument.load(template);
-                PDAcroForm acroForm = document.getDocumentCatalog().getAcroForm();
+                String templatePath = TEMPLATE_DIR + amc + ".pdf";
+                PDDocument pdfDoc = PDDocument.load(new File(templatePath));
+                PDAcroForm acroForm = pdfDoc.getDocumentCatalog().getAcroForm();
 
                 if (acroForm == null) {
-                    System.out.println("❌ No AcroForm in " + template.getName());
-                    document.close();
+                    System.err.println("No AcroForm found in template: " + templatePath);
+                    pdfDoc.close();
                     continue;
                 }
 
-                // ✅ Fix blank field font issues
-                if (acroForm.getDefaultResources() != null) {
-                    acroForm.getDefaultResources().put(COSName.getPDFName("Helv"), PDType1Font.HELVETICA);
+                // Fix for missing default resources (for setting font)
+                PDResources dr = acroForm.getDefaultResources();
+                if (dr == null) {
+                    dr = new PDResources();
+                    acroForm.setDefaultResources(dr);
                 }
 
-                for (Object keyObj : fieldMap.keySet()) {
-                    String logicalKey = (String) keyObj;
-                    String value = inputData.get(logicalKey);
-                    if (value == null || value.trim().isEmpty()) continue;
+                // Set default appearance with Helvetica font if needed
+                acroForm.setDefaultAppearance("/Helv 8 Tf");
 
-                    String fieldSpec = (String) fieldMap.get(logicalKey);
+                for (Object keyObj : amcMapping.keySet()) {
+                    String logicalName = (String) keyObj;
+                    String fieldName = (String) amcMapping.get(logicalName);
+                    String value = formData.get(logicalName);
 
-                    for (String rawFieldName : fieldSpec.split("and")) {
-                        String fieldName = rawFieldName.trim();
+                    if (value == null || value.isEmpty()) continue;
 
-                        // ✅ Handle checkboxes with # suffix
-                        if (fieldName.toLowerCase().startsWith("check box")) {
-                            if (fieldName.contains("#")) {
-                                String[] parts = fieldName.split("#");
-                                if (parts.length >= 2) {
-                                    String baseName = parts[0].trim();
-                                    String[] indices = parts[1].split(",");
-                                    for (String idx : indices) {
-                                        String fullCheckBox = baseName + "#" + idx.trim();
-                                        PDField field = acroForm.getField(fullCheckBox);
-                                        if (field instanceof PDCheckBox) {
-                                            if ("yes".equalsIgnoreCase(value) || value.equals(idx.trim())) {
-                                                ((PDCheckBox) field).check();
-                                            } else {
-                                                ((PDCheckBox) field).unCheck();
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                // ✅ Support simple checkbox (like checkbox1)
-                                PDField field = acroForm.getField(fieldName);
-                                if (field instanceof PDCheckBox) {
-                                    if ("yes".equalsIgnoreCase(value) || "on".equalsIgnoreCase(value)) {
-                                        ((PDCheckBox) field).check();
-                                    } else {
-                                        ((PDCheckBox) field).unCheck();
-                                    }
-                                }
-                            }
+                    PDField field = acroForm.getField(fieldName);
+                    if (field == null) {
+                        System.err.println("Field not found: " + fieldName);
+                        continue;
+                    }
+
+                    try {
+                        if (field.getCOSObject().getNameAsString(COSName.FT).equals("Btn")) {
+                            // Handle checkbox
+                            field.setValue(value.equalsIgnoreCase("Yes") ? "Yes" : "Off");
                         } else {
-                            // ✅ Normal text field
-                            PDField field = acroForm.getField(fieldName);
-                            if (field != null) {
-                                try {
-                                    field.setValue(value);
-                                } catch (Exception fe) {
-                                    System.out.println("⚠️ Error setting field: " + fieldName + " - " + fe.getMessage());
-                                }
-                            } else {
-                                System.out.println("🚫 Field not found: " + fieldName);
-                            }
+                            // Handle text
+                            field.setValue(value);
                         }
+                    } catch (Exception e) {
+                        System.err.println("Error setting field " + fieldName + ": " + e.getMessage());
                     }
                 }
 
-                String clientName = inputData.getOrDefault("Applicant name", "Client").replaceAll("[^a-zA-Z0-9]", "_");
-                File outDir = new File("filled_forms/" + clientName);
-                outDir.mkdirs();
-
-                File outFile = new File(outDir, amc + "_Filled.pdf");
-                document.save(outFile);
-                document.close();
-
-                System.out.println("✅ Saved: " + outFile.getAbsolutePath());
+                String outputFilePath = clientFolder.getAbsolutePath() + "/" + amc + "_filled.pdf";
+                pdfDoc.save(outputFilePath);
+                pdfDoc.close();
+                System.out.println("Saved filled form: " + outputFilePath);
             }
 
         } catch (Exception e) {
-            System.out.println("❌ Error while filling: " + e.getMessage());
             e.printStackTrace();
         }
     }

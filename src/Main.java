@@ -7,6 +7,8 @@ import javafx.stage.Stage;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
+
+
 import java.io.FileReader;
 import java.util.*;
 
@@ -19,7 +21,19 @@ public class Main extends Application {
         VBox mainContainer = new VBox(10);
         mainContainer.setPadding(new Insets(15));
 
-        // 1. AMC checkbox selection
+        
+        Label formLabel = new Label("Select Form:");
+        ToggleGroup formGroup = new ToggleGroup();
+        RadioButton commonAppRadio = new RadioButton("Common Application");
+        RadioButton sipRadio = new RadioButton("SIP");
+        RadioButton stpRadio = new RadioButton("STP");
+        commonAppRadio.setToggleGroup(formGroup);
+        sipRadio.setToggleGroup(formGroup);
+        stpRadio.setToggleGroup(formGroup);
+        commonAppRadio.setSelected(true); 
+        HBox formBox = new HBox(10, formLabel, commonAppRadio, sipRadio, stpRadio);
+
+        // 2. AMC checkbox selection
         Label amcLabel = new Label("Select AMCs:");
         HBox amcBox = new HBox(10);
         CheckBox axisCheck = new CheckBox("Axis");
@@ -29,16 +43,18 @@ public class Main extends Application {
         CheckBox sbiCheck = new CheckBox("SBI");
         CheckBox tataCheck = new CheckBox("TATA");
         CheckBox kotakCheck = new CheckBox("KOTAK");
-        amcBox.getChildren().addAll(axisCheck, miraeCheck, iciciCheck, hdfcCheck,sbiCheck, tataCheck, kotakCheck);
+        CheckBox ftCheck = new CheckBox("Franklin Templeton");
+        CheckBox quantCheck = new CheckBox("QUANT");
+        amcBox.getChildren().addAll(axisCheck, miraeCheck, iciciCheck, hdfcCheck, sbiCheck, tataCheck, kotakCheck,ftCheck, quantCheck);
 
-        // 2. Field container
+        // 3. Field container
         VBox formFields = new VBox(10);
         formFields.setPadding(new Insets(10));
         ScrollPane scrollPane = new ScrollPane(formFields);
         scrollPane.setFitToWidth(true);
         scrollPane.setPrefHeight(600);
 
-        // 3. Load all unique field labels from all AMCs
+        // 4. Load all unique field labels from all AMCs
         try {
             JSONObject fullMap = (JSONObject) new JSONParser().parse(new FileReader("amc_field_mapping.json"));
             Set<String> allFields = new LinkedHashSet<>();
@@ -62,7 +78,7 @@ public class Main extends Application {
             formFields.getChildren().add(new Label("❌ Failed to load field mappings."));
         }
 
-        // 4. Button to generate forms
+        // 5. Button to generate forms
         Button generateBtn = new Button("Generate PDFs");
         generateBtn.setOnAction(e -> {
             List<String> selectedAMCs = new ArrayList<>();
@@ -73,6 +89,8 @@ public class Main extends Application {
             if (sbiCheck.isSelected()) selectedAMCs.add("SBI");
             if (tataCheck.isSelected()) selectedAMCs.add("TATA");
             if (kotakCheck.isSelected()) selectedAMCs.add("KOTAK");
+            if (ftCheck.isSelected()) selectedAMCs.add("Franklin Templeton");
+            if (quantCheck.isSelected()) selectedAMCs.add("QUANT");
 
             if (selectedAMCs.isEmpty()) {
                 Alert alert = new Alert(Alert.AlertType.WARNING, "Please select at least one AMC.");
@@ -80,16 +98,25 @@ public class Main extends Application {
                 return;
             }
 
+            String formType = "Common";
+            if (sipRadio.isSelected()) formType = "SIP";
+            else if (stpRadio.isSelected()) formType = "STP";
+
             Map<String, String> formData = new HashMap<>();
             for (Map.Entry<String, TextField> entry : fieldInputs.entrySet()) {
                 formData.put(entry.getKey(), entry.getValue().getText());
             }
-
-            PDFGeneratorHelper.fillForms(selectedAMCs, formData);
+            try {
+                PDFGeneratorHelper.fillForms(selectedAMCs, formData);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                Alert alert = new Alert(Alert.AlertType.ERROR, "❌ Error generating PDFs.");
+                alert.show();
+            }
         });
 
         HBox buttonBar = new HBox(15, generateBtn);
-        mainContainer.getChildren().addAll(amcLabel, amcBox, scrollPane, buttonBar);
+        mainContainer.getChildren().addAll(formBox, amcLabel, amcBox, scrollPane, buttonBar);
 
         Scene scene = new Scene(mainContainer, 800, 700);
         primaryStage.setTitle("PRM Advisory");
