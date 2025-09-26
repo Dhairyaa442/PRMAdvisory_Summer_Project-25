@@ -45,7 +45,10 @@ public class Main extends Application {
         CheckBox kotakCheck = new CheckBox("KOTAK");
         CheckBox ftCheck = new CheckBox("Franklin Templeton");
         CheckBox quantCheck = new CheckBox("QUANT");
-        amcBox.getChildren().addAll(axisCheck, miraeCheck, iciciCheck, hdfcCheck, sbiCheck, tataCheck, kotakCheck,ftCheck, quantCheck);
+        CheckBox abslCheck = new CheckBox("ABSL");
+        CheckBox nipponCheck = new CheckBox("Nippon");
+        CheckBox utiCheck = new CheckBox("Uti");
+        amcBox.getChildren().addAll(axisCheck, miraeCheck, iciciCheck, hdfcCheck, sbiCheck, tataCheck, kotakCheck,ftCheck, quantCheck, abslCheck, nipponCheck, utiCheck);
 
         // 3. Field container
         VBox formFields = new VBox(10);
@@ -91,6 +94,9 @@ public class Main extends Application {
             if (kotakCheck.isSelected()) selectedAMCs.add("KOTAK");
             if (ftCheck.isSelected()) selectedAMCs.add("Franklin Templeton");
             if (quantCheck.isSelected()) selectedAMCs.add("QUANT");
+            if (abslCheck.isSelected()) selectedAMCs.add("ABSL");
+            if (nipponCheck.isSelected()) selectedAMCs.add("Nippon");
+            if (utiCheck.isSelected()) selectedAMCs.add("UTI");
 
             if (selectedAMCs.isEmpty()) {
                 Alert alert = new Alert(Alert.AlertType.WARNING, "Please select at least one AMC.");

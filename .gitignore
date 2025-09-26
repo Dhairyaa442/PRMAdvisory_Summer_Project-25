@@ -1,0 +1,7 @@
+.DS_Store
+.idea/ .vscode/ *.iml
+/out/ /build/ /bin/ /target/
+*.class
+*.log
+*.jar *.war *.ear
+*.dmg *.pkg
